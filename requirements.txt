@@ -1,1 +1,9 @@
-
+pandas
+Pillow
+matplotlib
+tkcalendar
+flake8
+black
+pylint
+mypy
+ttkthemes
