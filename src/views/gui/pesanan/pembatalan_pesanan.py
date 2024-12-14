@@ -25,71 +25,49 @@ class PembatalanPesanan:
         # Buat window baru
         self.window = tk.Toplevel(self.parent)
         self.window.title("Pembatalan Pesanan")
-        self.window.geometry("400x500")
+        self.window.geometry("400x600")
         self.window.configure(bg=self.colors['background'])
         
         # Load data pesanan
         self.load_pesanan_data()
         
+        if not hasattr(self, 'pesanan') or self.pesanan is None:
+            self.window.destroy()
+            return
+
         # Inisialisasi komponen UI
+        self.init_ui()
+        
+        # Center window dan set modal
+        self.window.transient(self.parent)
+        self.window.grab_set()
+
+    def init_ui(self):
+        """Inisialisasi semua komponen UI"""
         self.create_header()
         self.create_warning_section()
         self.create_detail_section()
         self.create_reason_section()
         self.create_confirmation_buttons()
-        
-        # Center window dan set modal
-        self.window.transient(self.parent)
-        self.window.grab_set()
-        self.parent.wait_window(self.window)
-        
-    def load_pesanan_data(self):
-        """Memuat data pesanan dari database"""
-        # Ambil data pesanan
-        self.pesanan = self.controller.get_pesanan(self.pesanan_id)
-        if not self.pesanan:
-            messagebox.showerror(
-                "Error",
-                "Data pesanan tidak ditemukan"
-            )
-            self.window.destroy()
-            return
-            
-        # Cek apakah pesanan masih bisa dibatalkan
-        if self.pesanan.status != "Pending":
-            messagebox.showerror(
-                "Error",
-                "Pesanan tidak dapat dibatalkan karena status sudah " + 
-                self.pesanan.status.lower()
-            )
-            self.window.destroy()
-            return
-            
-        # Ambil data produk terkait
-        self.product = next(
-            (p for p in self.db.get_all_produk() 
-             if p['id_produk'] == self.pesanan.id_produk),
-            None
-        )
-        
+
     def create_header(self):
         """Membuat bagian header"""
         header_frame = tk.Frame(
             self.window,
             bg=self.colors['error'],
             padx=20,
-            pady=10
+            pady=15
         )
         header_frame.pack(fill=tk.X)
         
         # Icon dan judul
         tk.Label(
             header_frame,
-            text="⚠️",  # Warning emoji
+            text="⚠️",
             font=('Arial', 24),
             bg=self.colors['error'],
             fg='white'
-        ).pack()
+        ).pack(pady=(0, 5))
         
         tk.Label(
             header_frame,
@@ -97,7 +75,7 @@ class PembatalanPesanan:
             font=('Arial', 16, 'bold'),
             bg=self.colors['error'],
             fg='white'
-        ).pack()
+        ).pack(pady=(0, 5))
         
         tk.Label(
             header_frame,
@@ -106,9 +84,9 @@ class PembatalanPesanan:
             bg=self.colors['error'],
             fg='white'
         ).pack()
-        
+
     def create_warning_section(self):
-        """Membuat bagian peringatan pembatalan"""
+        """Membuat bagian peringatan"""
         warning_frame = tk.Frame(
             self.window,
             bg=self.colors['background'],
@@ -132,8 +110,8 @@ class PembatalanPesanan:
             fg=self.colors['error'],
             justify=tk.LEFT,
             wraplength=350
-        ).pack()
-        
+        ).pack(pady=10)
+
     def create_detail_section(self):
         """Membuat bagian detail pesanan"""
         detail_frame = tk.LabelFrame(
@@ -146,14 +124,21 @@ class PembatalanPesanan:
             pady=10
         )
         detail_frame.pack(fill=tk.X, padx=20, pady=10)
-        self.pesanan.tanggal_pesanan = datetime.fromisoformat(self.pesanan.tanggal_pesanan)
-        # Data yang akan ditampilkan
+
+        # Format tanggal pesanan
+        try:
+            tanggal = datetime.fromisoformat(self.pesanan.tanggal_pesanan)
+            tanggal_str = tanggal.strftime("%d/%m/%Y %H:%M")
+        except:
+            tanggal_str = str(self.pesanan.tanggal_pesanan)
+
+        # Data pesanan yang akan ditampilkan
         details = [
             ("ID Pesanan", self.pesanan_id),
-            ("Tanggal", self.pesanan.tanggal_pesanan),
+            ("Tanggal", tanggal_str),
             ("Produk", self.product['nama_produk'] if self.product else "-"),
             ("Jumlah", self.pesanan.jumlah_dipesan),
-            ("Total", f"Rp {self.pesanan.total_harga:,}")
+            ("Total", f"Rp {float(self.pesanan.total_harga):,.2f}")
         ]
         
         for label, value in details:
@@ -180,7 +165,7 @@ class PembatalanPesanan:
                 bg=self.colors['background'],
                 fg=self.colors['primary']
             ).pack(side=tk.LEFT, padx=5)
-            
+
     def create_reason_section(self):
         """Membuat bagian alasan pembatalan"""
         reason_frame = tk.LabelFrame(
@@ -205,23 +190,21 @@ class PembatalanPesanan:
         
         reasons = [
             "Permintaan pelanggan",
-            "Stok tidak tersedia",
+            "Stok tidak tersedia", 
             "Kesalahan input pesanan",
+            "Pesanan duplikat",
+            "Pembatalan sistem",
             "Lainnya"
         ]
         
         self.reason_var = tk.StringVar()
-        reason_cb = ttk.Combobox(
+        self.reason_cb = ttk.Combobox(
             reason_frame,
             textvariable=self.reason_var,
             values=reasons,
-            width=30,
-            state="readonly"
+            width=30
         )
-        reason_cb.pack(fill=tk.X, pady=(0, 10))
-        
-        # Bind event perubahan alasan
-        reason_cb.bind('<<ComboboxSelected>>', self.on_reason_change)
+        self.reason_cb.pack(fill=tk.X, pady=(0, 10))
         
         # Text area untuk keterangan tambahan
         tk.Label(
@@ -239,7 +222,7 @@ class PembatalanPesanan:
             font=('Arial', 10)
         )
         self.notes_text.pack(fill=tk.X)
-        
+
     def create_confirmation_buttons(self):
         """Membuat tombol-tombol konfirmasi"""
         button_frame = tk.Frame(
@@ -260,8 +243,8 @@ class PembatalanPesanan:
             command=self.window.destroy
         ).pack(side=tk.RIGHT, padx=5)
         
-        # Tombol Konfirmasi
-        self.confirm_button = tk.Button(
+        # Tombol Konfirmasi Pembatalan
+        tk.Button(
             button_frame,
             text="Konfirmasi Pembatalan",
             font=('Arial', 10, 'bold'),
@@ -270,43 +253,67 @@ class PembatalanPesanan:
             padx=20,
             pady=10,
             command=self.confirm_cancellation
-        )
-        self.confirm_button.pack(side=tk.RIGHT)
-        
-    def on_reason_change(self, event=None):
-        """Handler untuk perubahan alasan pembatalan"""
-        # Jika alasan "Lainnya" dipilih, fokus ke text area
-        if self.reason_var.get() == "Lainnya":
-            self.notes_text.focus()
-        
+        ).pack(side=tk.RIGHT)
+
+    def load_pesanan_data(self):
+        """Memuat data pesanan yang akan dibatalkan"""
+        try:
+            # Load pesanan
+            self.pesanan = self.controller.get_pesanan(self.pesanan_id)
+            if not self.pesanan:
+                messagebox.showerror(
+                    "Error",
+                    "Data pesanan tidak ditemukan"
+                )
+                return
+                
+            # Cek status pesanan
+            if self.pesanan.status != "Pending":
+                messagebox.showerror(
+                    "Error",
+                    f"Pesanan tidak dapat dibatalkan karena status sudah {self.pesanan.status.lower()}"
+                )
+                return
+                
+            # Load data produk terkait
+            self.product = next(
+                (p for p in self.db.get_all_produk() 
+                 if p['id_produk'] == self.pesanan.id_produk),
+                None
+            )
+            
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"Gagal memuat data pesanan: {str(e)}"
+            )
+            return
+
     def confirm_cancellation(self):
         """Handler untuk konfirmasi pembatalan"""
-        # Validasi input
         if not self.reason_var.get():
             messagebox.showwarning(
                 "Peringatan",
-                "Pilih alasan pembatalan"
+                "Pilih alasan pembatalan"  
             )
             return
             
-        # Konfirmasi final
         if not messagebox.askyesno(
             "Konfirmasi Pembatalan",
             "Yakin ingin membatalkan pesanan ini?"
         ):
             return
             
-        # Proses pembatalan
         try:
-            # Catat alasan pembatalan
+            # Get reason and notes
             reason = self.reason_var.get()
-            if reason == "Lainnya" or self.notes_text.get("1.0", "end-1c").strip():
-                reason += f"\nKeterangan: {self.notes_text.get('1.0', 'end-1c')}"
-                
-            # Batalkan pesanan
-            success = self.controller.cancel_pesanan(self.pesanan_id)
+            notes = self.notes_text.get("1.0", "end-1c").strip()
             
-            if success:
+            if notes:
+                reason += f"\nKeterangan: {notes}"
+                
+            # Process cancellation
+            if self.controller.cancel_pesanan(self.pesanan_id):
                 messagebox.showinfo(
                     "Sukses",
                     "Pesanan berhasil dibatalkan"
@@ -316,7 +323,7 @@ class PembatalanPesanan:
                 self.window.destroy()
             else:
                 messagebox.showerror(
-                    "Error",
+                    "Error", 
                     "Gagal membatalkan pesanan"
                 )
                 
@@ -325,4 +332,3 @@ class PembatalanPesanan:
                 "Error",
                 f"Terjadi kesalahan: {str(e)}"
             )
-
