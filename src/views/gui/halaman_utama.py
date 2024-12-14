@@ -80,7 +80,7 @@ class HalamanUtama:
             # Filter pesanan hari ini
             today_orders = [
                 order for order in pesanan_list 
-                if datetime.strptime(order['tanggal_pesanan']).date() == today
+                if datetime.fromisoformat(order['tanggal_pesanan']).date() == today
             ] if pesanan_list else []
 
             # Hitung total pendapatan hari ini (dari pesanan yang selesai)
