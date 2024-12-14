@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from models.pesanan import Pesanan
 from models.produk import Produk
@@ -16,18 +16,18 @@ class PesananController:
         """Load pesanan dari database"""
         try:
             pesanan_data = self.db.get_all_pesanan()
-            
             self.daftar_pesanan = []
             for data in pesanan_data:
-                if all(k in data for k in ['id_pesanan', 'id_pelanggan', 'id_produk', 
-                                         'jumlah_dipesan', 'total_harga', 'status', 
-                                         'tanggal_pesanan']):    
-                    data['jumlah_dipesan'] = int(data['jumlah_dipesan'])
-                    data['total_harga'] = float(data['total_harga'])
-                    
-                    pesanan = Pesanan(**data)
-                    self.daftar_pesanan.append(pesanan)
-                    
+                pesanan = Pesanan(
+                    id_pesanan=data['id_pesanan'],
+                    id_pelanggan=data['id_pelanggan'],
+                    id_produk=data['id_produk'],
+                    jumlah_dipesan=int(data['jumlah_dipesan']),
+                    total_harga=float(data['total_harga']),
+                    status=data['status'],
+                    tanggal_pesanan=data['tanggal_pesanan']
+                )
+                self.daftar_pesanan.append(pesanan)
         except Exception as e:
             print(f"Error loading pesanan: {str(e)}")
             self.daftar_pesanan = []
@@ -36,7 +36,7 @@ class PesananController:
         """Membuat pesanan baru dengan validasi stok"""
         try:
             # Validasi stok - konversi ke int
-            current_stok = int(produk.stok)  # Konversi stok ke integer
+            current_stok = int(produk.stok)
             jumlah_pesan = int(data_pesanan.get('jumlah_dipesan', 0))
             
             if current_stok < jumlah_pesan:
@@ -47,7 +47,7 @@ class PesananController:
                 'id_pesanan': data_pesanan['id_pesanan'],
                 'id_pelanggan': data_pesanan['id_pelanggan'],
                 'id_produk': data_pesanan['id_produk'],
-                'jumlah_dipesan': jumlah_pesan, 
+                'jumlah_dipesan': jumlah_pesan,
                 'total_harga': float(produk.harga) * jumlah_pesan,
                 'status': 'Pending',
                 'tanggal_pesanan': datetime.now().isoformat()
@@ -62,20 +62,12 @@ class PesananController:
                     self.daftar_pesanan.append(pesanan)
                     print(f"Pesanan berhasil dibuat: {pesanan.id_pesanan}")
                     return pesanan
-
-            if hasattr(self, 'notification'):
-                self.notification.check_stock_notification({
-                    'id_produk': produk.id_produk,
-                    'nama_produk': produk.nama_produk,
-                    'stok': current_stok - jumlah_pesan
-                })
-
-            return pesanan
-
+                    
+            return None
+    
         except Exception as e:
             print(f"Error membuat pesanan: {str(e)}")
             return None
-
         
     def lihat_daftar_pesanan(self, filter_status: Optional[str] = None) -> List[Pesanan]:
         """Melihat daftar pesanan dengan optional filter status"""
@@ -96,8 +88,6 @@ class PesananController:
             
         # Update status pesanan di database
         if self.db.update_pesanan_status(id_pesanan, "Dibatalkan"):
-            pesanan.status = "Dibatalkan"
-            
             # Kembalikan stok
             produk = next(
                 (p for p in self.db.get_all_produk() if p['id_produk'] == pesanan.id_produk),
@@ -108,64 +98,77 @@ class PesananController:
                     pesanan.id_produk,
                     {'stok': int(produk['stok']) + pesanan.jumlah_dipesan}
                 )
+            self._load_pesanan()  # Reload daftar pesanan
             return True
         return False
         
-    def mark_as_done(self, id_pesanan: str) -> bool:
-        """Menandai pesanan sebagai selesai dan membuat transaksi"""
-        try:
-            pesanan = self.get_pesanan(id_pesanan)
-            if not pesanan or pesanan.status == "Dibatalkan":
-                return False
+    def mark_as_done(self, id_pesanan: str) -> Tuple[bool, str]:
+        """Menandai pesanan sebagai selesai"""
+        pesanan = self.get_pesanan(id_pesanan)
+        if not pesanan:
+            return False, "Pesanan tidak ditemukan"
             
-            # Update status pesanan
-            if self.db.update_pesanan_status(id_pesanan, "Selesai"):
-                # Buat transaksi baru
-                transaksi_data = {
-                    'id_transaksi': f"TRX{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                    'id_pesanan': id_pesanan,
-                    'total_harga': pesanan.total_harga,
-                    'metode_pembayaran': 'Tunai',
-                    'tanggal_transaksi': datetime.now().isoformat()
-                }
-                
-                # Simpan transaksi
-                if self.db.add_transaksi(transaksi_data):
-                    return True
-            return False
+        if pesanan.status == "Dibatalkan":
+            return False, "Tidak dapat menyelesaikan pesanan yang sudah dibatalkan"
             
-        except Exception as e:
-            print(f"Error marking order as done: {str(e)}")
-            return False
+        if pesanan.status == "Selesai":
+            return False, "Pesanan sudah selesai"
+            
+        if self.db.update_pesanan_status(id_pesanan, "Selesai"):
+            self._load_pesanan()  # Reload daftar pesanan
+            return True, "Pesanan berhasil diselesaikan"
+            
+        return False, "Gagal menyelesaikan pesanan"
+
     
-    def update_pesanan(self, updated_data: Dict) -> bool:
-        """Memperbarui data pesanan"""
+    def update_pesanan(self, data_pesanan: Dict) -> Tuple[bool, str]:
+        """Memperbarui data pesanan yang sudah ada"""
         try:
-            pesanan_list = self.get_all_pesanan()
-            updated = False
-            
-            for pesanan in pesanan_list:
-                if pesanan['id_pesanan'] == updated_data['id_pesanan']:
-                    # Update data yang diperlukan
-                    pesanan.update({
-                        'id_pelanggan': updated_data.get('id_pelanggan', pesanan['id_pelanggan']),
-                        'id_produk': updated_data.get('id_produk', pesanan['id_produk']),
-                        'jumlah_dipesan': updated_data.get('jumlah_dipesan', pesanan['jumlah_dipesan']),
-                        'total_harga': updated_data.get('total_harga', pesanan['total_harga']),
-                        'status': updated_data.get('status', pesanan['status']),
-                        'tanggal_pesanan': updated_data.get('tanggal_pesanan', pesanan['tanggal_pesanan'])
-                    })
-                    updated = True
-                    break
-                
-            if updated:
-                return self.csv_handler.write_csv(
-                    self.file_paths['pesanan'],
-                    pesanan_list,
-                    self.field_definitions['pesanan']
-                )
-            return False
-        
+            # Get existing pesanan
+            old_pesanan = self.get_pesanan(data_pesanan['id_pesanan'])
+            if not old_pesanan:
+                return False, "Pesanan tidak ditemukan"
+
+            # Get product info
+            product = next(
+                (p for p in self.db.get_all_produk() 
+                 if p['id_produk'] == data_pesanan['id_produk']),
+                None
+            )
+            if not product:
+                return False, "Produk tidak ditemukan"
+
+            # Calculate stock changes
+            old_qty = old_pesanan.jumlah_dipesan
+            new_qty = int(data_pesanan['jumlah_dipesan'])
+            stock_change = old_qty - new_qty
+
+            # Validate new stock
+            current_stock = int(product['stok'])
+            if current_stock + stock_change < 0:
+                return False, "Stok tidak mencukupi"
+
+            # Prepare update data
+            update_data = {
+                'id_pesanan': data_pesanan['id_pesanan'],
+                'id_pelanggan': data_pesanan['id_pelanggan'],
+                'id_produk': data_pesanan['id_produk'],
+                'jumlah_dipesan': new_qty,
+                'total_harga': float(product['harga']) * new_qty,
+                'status': 'Pending',
+                'tanggal_pesanan': datetime.now().isoformat()
+            }
+
+            # Update order in database
+            if self.db.update_pesanan(update_data):
+                # Update product stock
+                new_stock = current_stock + stock_change
+                self.db.update_produk(product['id_produk'], {'stok': new_stock})
+                self._load_pesanan()  # Reload orders
+                return True, "Pesanan berhasil diperbarui"
+
+            return False, "Gagal memperbarui pesanan"
+
         except Exception as e:
             print(f"Error updating order: {str(e)}")
-            return False
+            return False, str(e)
