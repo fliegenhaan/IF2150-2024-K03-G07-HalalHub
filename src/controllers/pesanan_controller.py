@@ -103,24 +103,45 @@ class PesananController:
         return False
         
     def mark_as_done(self, id_pesanan: str) -> Tuple[bool, str]:
-        """Menandai pesanan sebagai selesai"""
+        """Menandai pesanan sebagai selesai dan membuat transaksi baru"""
         pesanan = self.get_pesanan(id_pesanan)
         if not pesanan:
             return False, "Pesanan tidak ditemukan"
-            
+
         if pesanan.status == "Dibatalkan":
             return False, "Tidak dapat menyelesaikan pesanan yang sudah dibatalkan"
-            
+
         if pesanan.status == "Selesai":
             return False, "Pesanan sudah selesai"
-            
+
+        # Update status pesanan ke Selesai
         if self.db.update_pesanan_status(id_pesanan, "Selesai"):
-            self._load_pesanan()  # Reload daftar pesanan
-            return True, "Pesanan berhasil diselesaikan"
-            
+            try:
+                # Buat data transaksi baru
+                transaksi_data = {
+                    'id_transaksi': f"TRX{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    'id_pesanan': id_pesanan,
+                    'total_harga': pesanan.total_harga,
+                    'metode_pembayaran': 'Tunai',  # Default ke Tunai untuk saat ini
+                    'tanggal_transaksi': datetime.now().isoformat()
+                }
+
+                # Simpan transaksi ke database
+                if self.db.add_transaksi(transaksi_data):
+                    self._load_pesanan()  # Reload daftar pesanan
+                    return True, "Pesanan berhasil diselesaikan"
+                else:
+                    # Rollback status pesanan jika gagal membuat transaksi
+                    self.db.update_pesanan_status(id_pesanan, "Pending")
+                    return False, "Gagal membuat transaksi"
+
+            except Exception as e:
+                # Rollback status pesanan jika terjadi error
+                self.db.update_pesanan_status(id_pesanan, "Pending")
+                return False, f"Error saat membuat transaksi: {str(e)}"
+
         return False, "Gagal menyelesaikan pesanan"
 
-    
     def update_pesanan(self, data_pesanan: Dict) -> Tuple[bool, str]:
         """Memperbarui data pesanan yang sudah ada"""
         try:
