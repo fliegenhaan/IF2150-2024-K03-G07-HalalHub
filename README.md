@@ -29,14 +29,14 @@ HalalHub adalah program manajemen penjualan berbasis Python yang dirancang khusu
 
 ## Daftar Modul dan Pembagian Tugas
 
-### 1. Modul Produk (@danenftyessir ; @ArdellAghna)
+### 1. Modul Produk (@danenftyessir ; @ArdellAghna; @fliegenhaan)
 - Manajemen produk (CRUD)
 - Filter dan pencarian produk
 - Pengelolaan stok
 - GUI: DaftarProduk, TambahProduk, EditProduk, DetailProduk
 - Status: ✅ Selesai
 
-### 2. Modul Pesanan (@fliegenhaan)
+### 2. Modul Pesanan (@fliegenhaan; @AbizzarG)
 - Input dan pengelolaan pesanan
 - Pembatalan pesanan
 - Status pesanan (pending/selesai/batal)
